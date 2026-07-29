@@ -7,10 +7,25 @@ DYNAMIC_HOSTS="${DDNS_HOSTS_FILE:-/data/dynamic.hosts}"
 PID_FILE="${DNSMASQ_PID_FILE:-/run/dnsmasq.pid}"
 DDNS_PORT="${DDNS_PORT:-5353}"
 
+export DDNS_ZONE="${DDNS_ZONE:-example.com}"
+export DDNS_REV_ZONE="${DDNS_REV_ZONE:-0.168.192.in-addr.arpa}"
+export DDNS_GW_IP="${DDNS_GW_IP:-192.168.0.1}"
+export DDNS_STATIC_IP="${DDNS_STATIC_IP:-192.168.0.10}"
+export DDNS_NS1_IP="${DDNS_NS1_IP:-192.168.0.53}"
+export DDNS_GW_PTR="${DDNS_GW_PTR:-1}"
+export DDNS_STATIC_PTR="${DDNS_STATIC_PTR:-10}"
+export DDNS_NS1_PTR="${DDNS_NS1_PTR:-53}"
+export UPSTREAM_DNS_1="${UPSTREAM_DNS_1:-1.1.1.1}"
+export UPSTREAM_DNS_2="${UPSTREAM_DNS_2:-8.8.8.8}"
+
 mkdir -p /data /keys /run
+
+# Render dnsmasq.conf from template with env vars.
+envsubst '$DDNS_ZONE $DDNS_REV_ZONE $DDNS_GW_IP $DDNS_STATIC_IP $DDNS_NS1_IP $DDNS_GW_PTR $DDNS_STATIC_PTR $DDNS_NS1_PTR $UPSTREAM_DNS_1 $UPSTREAM_DNS_2' < /etc/dnsmasq.conf.tpl > /etc/dnsmasq.conf
 [ -f "$ZONE_JSON" ] || echo '{}' > "$ZONE_JSON"
 [ -f "$DYNAMIC_CONF" ] || echo '# waiting for ddnsd' > "$DYNAMIC_CONF"
 [ -f "$DYNAMIC_HOSTS" ] || echo '# waiting for ddnsd' > "$DYNAMIC_HOSTS"
+chown -R dnsmasq:nogroup /data
 
 if [ ! -f /keys/update.key ]; then
   echo "[entrypoint] ERROR: /keys/update.key missing." >&2

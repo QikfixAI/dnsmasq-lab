@@ -5,10 +5,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${ROOT}"
 
-NAME="${CONTAINER_NAME:-dnsmasq-lab}"
-IMAGE="${IMAGE_NAME:-localhost/dnsmasq-lab:latest}"
-DNS_PORT="${DNS_PORT:-53}"
-UPDATE_PORT="${UPDATE_PORT:-5353}"
+# shellcheck source=load-config.sh
+source "${ROOT}/scripts/load-config.sh"
+
+NAME="${CONTAINER_NAME}"
+IMAGE="${IMAGE_NAME}"
+FIREWALLD_STATE="${ROOT}/data/.firewalld-opened"
 
 need_cmd() {
   local cmd="$1"
@@ -22,10 +24,12 @@ need_cmd() {
   fi
 }
 
-# If firewalld is running, ensure DNS and nsupdate host ports are allowed permanently.
+# If firewalld is running, open DNS and nsupdate host ports for this runtime
+# session only (not permanent). Always record lab ports in data/.firewalld-opened
+# so cleanup.sh can close them even if they were already open.
 ensure_firewalld_ports() {
   local ports=("$@")
-  local port proto changed=0
+  local port proto opened=()
 
   if ! command -v firewall-cmd >/dev/null 2>&1; then
     echo "firewalld: firewall-cmd not found; skipping"
@@ -38,48 +42,40 @@ ensure_firewalld_ports() {
   fi
 
   echo "firewalld: active — checking ports ${ports[*]} (tcp/udp)..."
+  mkdir -p "$(dirname "${FIREWALLD_STATE}")"
+  : > "${FIREWALLD_STATE}"
   for port in "${ports[@]}"; do
     for proto in tcp udp; do
+      # Always record lab ports so cleanup can reverse them.
+      echo "${port}/${proto}" >> "${FIREWALLD_STATE}"
       if firewall-cmd --quiet --query-port="${port}/${proto}" 2>/dev/null; then
-        echo "firewalld: ${port}/${proto} already open"
+        echo "firewalld: ${port}/${proto} already open (recorded for cleanup)"
         continue
       fi
-      echo "firewalld: opening ${port}/${proto} permanently"
-      if ! firewall-cmd --permanent --add-port="${port}/${proto}"; then
+      echo "firewalld: opening ${port}/${proto} (runtime)"
+      if ! firewall-cmd --add-port="${port}/${proto}"; then
         echo "error: failed to add firewalld rule for ${port}/${proto}" >&2
-        echo "       re-run as root, or: firewall-cmd --permanent --add-port=${port}/${proto} && firewall-cmd --reload" >&2
+        echo "       re-run as root, or: firewall-cmd --add-port=${port}/${proto}" >&2
         exit 1
       fi
-      changed=1
+      opened+=("${port}/${proto}")
     done
   done
 
-  if [[ "${changed}" -eq 1 ]]; then
-    echo "firewalld: reloading to apply permanent rules"
-    firewall-cmd --reload >/dev/null
+  if [[ "${#opened[@]}" -gt 0 ]]; then
+    echo "firewalld: opened ${opened[*]} (recorded in data/.firewalld-opened)"
   else
-    echo "firewalld: no changes needed"
+    echo "firewalld: no new openings; lab ports recorded in data/.firewalld-opened"
   fi
 }
 
 need_cmd podman "Install the podman package (e.g. dnf install -y podman)."
+./scripts/prepare.sh
+# prepare.sh reloads config
+# shellcheck source=load-config.sh
+source "${ROOT}/scripts/load-config.sh"
+
 ensure_firewalld_ports "${DNS_PORT}" "${UPDATE_PORT}"
-
-if [[ ! -f keys/update.key ]]; then
-  if ! command -v openssl >/dev/null 2>&1 \
-    && ! command -v python3 >/dev/null 2>&1 \
-    && ! command -v base64 >/dev/null 2>&1; then
-    echo "error: cannot generate TSIG key; need openssl, python3, or base64." >&2
-    exit 1
-  fi
-  echo "Generating TSIG key..."
-  ./scripts/generate-tsig-key.sh
-fi
-
-mkdir -p data
-[[ -f data/zone.json ]] || echo '{}' > data/zone.json
-[[ -f data/dynamic.conf ]] || echo '# dynamic TXT/CNAME records appear here' > data/dynamic.conf
-[[ -f data/dynamic.hosts ]] || echo '# dynamic A/AAAA records appear here' > data/dynamic.hosts
 
 echo "Building ${IMAGE}..."
 podman build -t "${IMAGE}" -f Containerfile .
@@ -90,7 +86,7 @@ if podman container exists "${NAME}" 2>/dev/null; then
   podman rm -f "${NAME}" >/dev/null
 fi
 
-echo "Starting ${NAME} (DNS :${DNS_PORT}, nsupdate :${UPDATE_PORT})..."
+echo "Starting ${NAME} (zone ${DDNS_ZONE}, ${LAB_CIDR}, DNS :${DNS_PORT}, nsupdate :${UPDATE_PORT})..."
 # :Z relabels volumes for SELinux (RHEL/Fedora).
 podman run -d \
   --name "${NAME}" \
@@ -101,13 +97,29 @@ podman run -d \
   -p "${UPDATE_PORT}:5353/tcp" \
   -v "${ROOT}/keys:/keys:ro,Z" \
   -v "${ROOT}/data:/data:Z" \
-  -e DDNS_ZONE=example.com \
-  -e DDNS_REV_ZONE=0.168.192.in-addr.arpa \
-  -e DDNS_KEY_NAME=update-key \
+  -e DDNS_ZONE="${DDNS_ZONE}" \
+  -e DDNS_REV_ZONE="${DDNS_REV_ZONE}" \
+  -e DDNS_KEY_NAME="${DDNS_KEY_NAME}" \
+  -e DDNS_PORT="${DDNS_PORT}" \
+  -e DDNS_GW_IP="${DDNS_GW_IP}" \
+  -e DDNS_STATIC_IP="${DDNS_STATIC_IP}" \
+  -e DDNS_NS1_IP="${DDNS_NS1_IP}" \
+  -e DDNS_GW_PTR="${DDNS_GW_PTR}" \
+  -e DDNS_STATIC_PTR="${DDNS_STATIC_PTR}" \
+  -e DDNS_NS1_PTR="${DDNS_NS1_PTR}" \
+  -e UPSTREAM_DNS_1="${UPSTREAM_DNS_1}" \
+  -e UPSTREAM_DNS_2="${UPSTREAM_DNS_2}" \
+  --health-cmd="dig @127.0.0.1 ns1.${DDNS_ZONE} +time=1 +tries=1 >/dev/null" \
+  --health-interval=15s \
+  --health-timeout=3s \
+  --health-start-period=10s \
+  --health-retries=3 \
   "${IMAGE}"
 
 echo
-echo "Container is up."
-echo "  Query:   dig @127.0.0.1 -p ${DNS_PORT} static.example.com"
+echo "Container is up (zone ${DDNS_ZONE})."
+echo "  Query:   dig @127.0.0.1 -p ${DNS_PORT} static.${DDNS_ZONE}"
 echo "  Update:  ./scripts/example-nsupdate.sh"
+echo "  Config:  config/lab.env"
 echo "  Logs:    podman logs -f ${NAME}"
+echo "  Health:  podman healthcheck run ${NAME}"

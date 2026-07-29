@@ -1,0 +1,5 @@
+keys/
+data/*
+!data/.gitkeep
+*.secret
+config/lab.local.env

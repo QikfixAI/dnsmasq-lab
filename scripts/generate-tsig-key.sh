@@ -3,8 +3,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=load-config.sh
+source "${ROOT}/scripts/load-config.sh"
+
 KEYS_DIR="${ROOT}/keys"
-KEY_NAME="${DDNS_KEY_NAME:-update-key}"
+KEY_NAME="${DDNS_KEY_NAME}"
 OUT="${KEYS_DIR}/update.key"
 
 mkdir -p "${KEYS_DIR}"
@@ -30,13 +33,13 @@ key "${KEY_NAME}." {
 };
 EOF
 
-chmod 644 "${OUT}"
+chmod 600 "${OUT}"
 
 # Convenience copy of the secret for inline nsupdate -y (lab only).
 cat > "${KEYS_DIR}/update.secret" <<EOF
-${KEY_NAME}:hmac-sha256:${SECRET}
+hmac-sha256:${KEY_NAME}:${SECRET}
 EOF
-chmod 644 "${KEYS_DIR}/update.secret"
+chmod 600 "${KEYS_DIR}/update.secret"
 
 echo "Wrote ${OUT}"
 echo "Also wrote ${KEYS_DIR}/update.secret (for nsupdate -y)"
@@ -47,6 +50,6 @@ echo
 echo "Example:"
 echo "  nsupdate -k ${OUT}"
 echo "  > server 127.0.0.1 5353"
-echo "  > zone example.com."
-echo "  > update add demo.example.com. 300 A 192.168.0.50"
+echo "  > zone ${DDNS_ZONE}."
+echo "  > update add demo.${DDNS_ZONE}. 300 A ${LAB_PREFIX}.50"
 echo "  > send"
