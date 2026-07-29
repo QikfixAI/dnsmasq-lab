@@ -1,0 +1,8 @@
+server 127.0.0.1 5353
+zone example.com.
+update add srv02.example.com. 300 A 192.168.0.101
+update add ocpsrv.ocpcluster.example.com. 86400 A 192.168.0.101
+update add api.ocpcluster.example.com. 86400 A 192.168.0.101
+update add api-int.ocpcluster.example.com. 86400 A 192.168.0.101
+update add *.apps.ocpcluster.example.com. 86400 A 192.168.0.101
+send
