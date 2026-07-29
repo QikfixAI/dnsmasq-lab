@@ -23,7 +23,9 @@ import dns.exception
 import dns.flags
 import dns.message
 import dns.name
+import dns.opcode
 import dns.rcode
+import dns.rdataclass
 import dns.rdatatype
 import dns.tsig
 import dns.tsigkeyring
@@ -228,8 +230,6 @@ def apply_update(msg: dns.message.Message) -> int:
     Returns:
         A DNS rcode integer (e.g. ``NOERROR``, ``NOTAUTH``, ``REFUSED``).
     """
-    import dns.rdataclass
-
     forward = dns.name.from_text(ZONE)
     reverse = dns.name.from_text(REV_ZONE)
     if not msg.question:
@@ -383,7 +383,6 @@ def handle_wire(data: bytes, peer: str) -> bytes:
         return resp.to_wire()
 
     with _lock:
-        load_state()
         rcode = apply_update(msg)
         if rcode == dns.rcode.NOERROR:
             save_state()
@@ -454,7 +453,6 @@ def main() -> int:
         return 1
 
     _keyname, _keyring = parse_key_file(KEY_FILE)
-    # Prefer env key name if it matches
     env_name = dns.name.from_text(KEY_NAME)
     if env_name in _keyring:
         _keyname = env_name
@@ -467,8 +465,17 @@ def main() -> int:
     udp = ThreadedUDPServer((LISTEN_ADDR, LISTEN_PORT), UDPHandler)
     tcp = ThreadedTCPServer((LISTEN_ADDR, LISTEN_PORT), TCPHandler)
 
+    def shutdown_handler(signum, frame):
+        log("received shutdown signal, stopping")
+        threading.Thread(target=udp.shutdown, daemon=True).start()
+        threading.Thread(target=tcp.shutdown, daemon=True).start()
+
+    signal.signal(signal.SIGTERM, shutdown_handler)
+    signal.signal(signal.SIGINT, shutdown_handler)
+
     threading.Thread(target=udp.serve_forever, daemon=True).start()
     tcp.serve_forever()
+    log("stopped")
     return 0
 
 

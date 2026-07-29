@@ -3,11 +3,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=load-config.sh
+source "${ROOT}/scripts/load-config.sh"
+
 KEY="${ROOT}/keys/update.key"
-HOST="${NSUPDATE_HOST:-127.0.0.1}"
-PORT="${UPDATE_PORT:-5353}"
-NAME="${1:-demo.example.com}"
-IP="${2:-192.168.0.50}"
+HOST="${NSUPDATE_HOST}"
+PORT="${UPDATE_PORT}"
+ZONE="${DDNS_ZONE}"
+NAME="${1:-demo.${ZONE}}"
+IP="${2:-${LAB_PREFIX}.50}"
 TTL="${3:-300}"
 
 if [[ ! -f "${KEY}" ]]; then
@@ -23,7 +27,7 @@ fi
 echo "Adding ${NAME} A ${IP} (ttl ${TTL}) via ${HOST}:${PORT}..."
 nsupdate -k "${KEY}" <<EOF
 server ${HOST} ${PORT}
-zone example.com.
+zone ${ZONE}.
 update delete ${NAME} A
 update add ${NAME} ${TTL} A ${IP}
 send

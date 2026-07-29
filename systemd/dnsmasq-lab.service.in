@@ -1,0 +1,23 @@
+[Unit]
+Description=dnsmasq-lab (dnsmasq + TSIG nsupdate)
+Documentation=file://@LAB_ROOT@/README.md
+After=network-online.target
+Wants=network-online.target
+# Open DNS ports after firewalld is up when present.
+After=firewalld.service
+Wants=firewalld.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=@LAB_ROOT@
+# Port 53 and firewall-cmd typically need root.
+# Invoke via /usr/bin/bash so SELinux allows running scripts under
+# admin_home_t (e.g. /root/...) — init_t cannot execute those files directly.
+ExecStart=/usr/bin/bash @LAB_ROOT@/scripts/start.sh
+ExecStop=/usr/bin/bash @LAB_ROOT@/scripts/stop.sh
+TimeoutStartSec=600
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NAME="${CONTAINER_NAME:-dnsmasq-lab}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=load-config.sh
+source "${ROOT}/scripts/load-config.sh"
+
+NAME="${CONTAINER_NAME}"
 
 if podman container exists "${NAME}" 2>/dev/null; then
   podman rm -f "${NAME}"

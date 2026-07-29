@@ -1,0 +1,29 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y dnsutils podman
+
+      - name: Ensure scripts are executable
+        run: chmod +x mgmt-scripts/*.sh scripts/*.sh
+
+      - name: Run test suite on remapped DNS port
+        # Avoid fighting systemd-resolved on :53; dig honors DNS_PORT.
+        # lab.env still supplies zone/network; DNS_PORT overrides the host publish port.
+        run: sudo DNS_PORT=1053 ./mgmt-scripts/test.sh
+
+      - name: Cleanup
+        if: always()
+        # Same DNS_PORT so firewalld cleanup (if any) matches what the test opened.
+        run: sudo DNS_PORT=1053 ./mgmt-scripts/cleanup.sh -y
