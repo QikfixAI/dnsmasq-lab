@@ -1,0 +1,8 @@
+server 127.0.0.1 5353
+zone example.com.
+update delete srv02.example.com. A
+update delete ocpsrv.ocpcluster.example.com. A
+update delete api.ocpcluster.example.com. A
+update delete api-int.ocpcluster.example.com. A
+update delete *.apps.ocpcluster.example.com. A
+send

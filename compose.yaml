@@ -1,0 +1,21 @@
+services:
+  dnsmasq:
+    container_name: dnsmasq-lab
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: localhost/dnsmasq-lab:latest
+    ports:
+      - "${DNS_PORT:-53}:53/udp"
+      - "${DNS_PORT:-53}:53/tcp"
+      - "${UPDATE_PORT:-5353}:5353/udp"
+      - "${UPDATE_PORT:-5353}:5353/tcp"
+    volumes:
+      - ./keys:/keys:ro,Z
+      - ./data:/data:Z
+    environment:
+      DDNS_ZONE: example.com
+      DDNS_REV_ZONE: 0.168.192.in-addr.arpa
+      DDNS_KEY_NAME: update-key
+      DDNS_PORT: "5353"
+    restart: unless-stopped
